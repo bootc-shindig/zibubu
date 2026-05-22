@@ -2,6 +2,18 @@
 
 set -ouex pipefail
 
+case "${DESKTOP}" in
+  plasma)
+    /ctx/pkgs/desktops/plasma.sh
+    ;;
+  gnome)
+    /ctx/pkgs/desktops/gnome.sh
+    ;;
+  *)
+    echo "Installing server as fallback..." >&2
+    ;;
+esac
+
 /ctx/pkgs/networking.sh
 /ctx/pkgs/uupd.sh
 /ctx/pkgs/security.sh

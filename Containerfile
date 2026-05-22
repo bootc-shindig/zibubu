@@ -1,9 +1,12 @@
 FROM scratch AS ctx
 COPY build_files /
 
+ARG DESKTOP
+
 FROM docker.io/library/ubuntu:resolute
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG DESKTOP
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     cp -r /ctx/sandbox/. /
@@ -45,26 +48,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Setup a temporary root passwd (changeme) for dev purposes
-# RUN apt-get update -y && apt-get install -y whois
-# RUN usermod -p "$(echo "changeme" | mkpasswd -s)" root
+RUN apt-get update -y && apt-get install -y whois
+RUN usermod -p "$(echo "changeme" | mkpasswd -s)" root
+
+RUN echo ${DESKTOP}
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    DESKTOP=${DESKTOP} /ctx/config.sh
+
 
 RUN apt-get update && apt-get install -y curl && \
-    #
     apt-get update && apt-get install --fix-missing -y \
     sudo vim flatpak distrobox \
-    cups hplip \
-    ubuntu-desktop-minimal python3-nautilus && \
-    #
-    systemctl enable gdm && \
-    apt-get remove -y packagekit totem snapshot shotwell simple-scan \
-    transmission-gtk rhythmbox update-manager gnome-calculator gnome-terminal remmina usb-creator-gtk \
-    gnome-clocks deja-dup "libreoffice*" || true && \
+    cups hplip && \
     apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
-    /ctx/config.sh
-
 
 ENV CARGO_HOME=/tmp/rust
 ENV RUSTUP_HOME=/tmp/rust

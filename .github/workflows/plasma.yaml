@@ -1,0 +1,20 @@
+name: Build Plasma Remix
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths-ignore: ["**/README.md"]
+  schedule:
+    - cron: "05 11 * * *"
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build.yaml
+    with:
+      desktop: plasma
+      image_name: kubuntu-bootc-remix
+      image_desc: "Unofficial Atomic Ubuntu (Plasma)"
+    secrets:
+      SIGNING_SECRET: ${{ secrets.SIGNING_SECRET }}

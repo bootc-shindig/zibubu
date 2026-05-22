@@ -1,0 +1,84 @@
+name: Reusable Image Build
+on:
+  workflow_call:
+    inputs:
+      desktop:
+        required: true
+        type: string
+      image_name:
+        required: true
+        type: string
+      image_desc:
+        required: true
+        type: string
+    secrets:
+      SIGNING_SECRET:
+        required: true
+
+env:
+  IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
+  DEFAULT_TAG: "latest"
+
+jobs:
+  build:
+    name: Build and Push
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          podman build \
+            --build-arg DESKTOP=${{ inputs.desktop }} \
+            -t "${{ inputs.image_name }}:${{ env.DEFAULT_TAG }}" \
+            -f ./Containerfile .
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login -u "${{ github.actor }}" --password-stdin "ghcr.io"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login -u "${{ github.actor }}" --password-stdin "ghcr.io"
+
+      - name: Push arch image
+        if: github.event_name != 'pull_request'
+        id: push
+        run: |
+          DEST="${{ env.IMAGE_REGISTRY }}/${{ inputs.image_name }}:${{ env.DEFAULT_TAG }}"
+          podman push --digestfile=/tmp/digestfile "localhost/${{ inputs.image_name }}:${{ env.DEFAULT_TAG }}" "${DEST}-amd64"
+          echo "digest=$(< /tmp/digestfile)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Sign and Manifest
+        if: github.event_name != 'pull_request'
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+        run: |
+          DIGEST="${{ steps.push.outputs.digest }}"
+          REGISTRY_IMAGE="${{ env.IMAGE_REGISTRY }}/${{ inputs.image_name }}"
+          
+          # Sign arch-specific image
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${REGISTRY_IMAGE}@${DIGEST}"
+          
+          # Create and push manifest
+          TARGET="${REGISTRY_IMAGE}:${{ env.DEFAULT_TAG }}"
+          podman manifest create "${TARGET}"
+          podman manifest add "${TARGET}" "${REGISTRY_IMAGE}@${DIGEST}" --arch amd64
+          
+          # Standard Bootc Metadata
+          podman manifest annotate --index --annotation "containers.bootc=1" "${TARGET}"
+          podman manifest annotate --index --annotation "org.opencontainers.image.title=${{ inputs.image_name }}" "${TARGET}"
+          podman manifest annotate --index --annotation "org.opencontainers.image.description=${{ inputs.image_desc }}" "${TARGET}"
+          
+          # Push multi-arch manifest
+          podman manifest push "${TARGET}" "${TARGET}"
+          
+          # Sign the manifest
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${TARGET}"
