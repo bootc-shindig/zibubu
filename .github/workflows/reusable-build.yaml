@@ -1,4 +1,5 @@
-name: Reusable Image Build
+---
+name: Build container image
 on:
   workflow_call:
     inputs:
@@ -11,74 +12,143 @@ on:
       image_desc:
         required: true
         type: string
+      image_keywords:
+        required: false
+        type: string
+        default: "bootc,ubuntu,kubuntu"
+      image_logo_url:
+        required: false
+        type: string
+        default: "https://avatars.githubusercontent.com/u/120078124?s=200&v=4"
+      default_tag:
+        required: false
+        type: string
+        default: "latest"
     secrets:
       SIGNING_SECRET:
-        required: true
+        required: false
 
 env:
+  IMAGE_DESC: ${{ inputs.image_desc }}
+  IMAGE_KEYWORDS: ${{ inputs.image_keywords }}
+  IMAGE_LOGO_URL: ${{ inputs.image_logo_url }}
+  IMAGE_NAME: ${{ inputs.image_name }}
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
-  DEFAULT_TAG: "latest"
+  DEFAULT_TAG: ${{ inputs.default_tag }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.image_name }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build and Push
+  build_push:
+    name: Build and push image
     runs-on: ubuntu-24.04
+
     permissions:
       contents: read
       packages: write
       id-token: write
+
     steps:
+      - name: Prepare environment
+        run: |
+          # Lowercase the image uri
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Build image
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+
+      - name: Get current date
+        id: date
         run: |
-          podman build \
-            --build-arg DESKTOP=${{ inputs.desktop }} \
-            -t "${{ inputs.image_name }}:${{ env.DEFAULT_TAG }}" \
-            -f ./Containerfile .
+          # This generates a timestamp like what is defined on the ArtifactHub documentation
+          # E.G: 2022-02-08T15:38:15Z'
+          # https://artifacthub.io/docs/topics/repositories/container-images/
+          # https://linux.die.net/man/1/date
+          echo "date=$(date -u +%Y\-%m\-%d\T%H\:%M\:%S\Z)" >> $GITHUB_OUTPUT
 
-      - name: Login to GHCR
-        if: github.event_name != 'pull_request'
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | podman login -u "${{ github.actor }}" --password-stdin "ghcr.io"
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login -u "${{ github.actor }}" --password-stdin "ghcr.io"
+      - name: Image Metadata
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        id: metadata
+        with:
+          tags: |
+            type=raw,value=${{ env.DEFAULT_TAG }}
+            type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
+            type=raw,value={{date 'YYYYMMDD'}}
+            type=sha,enable=${{ github.event_name == 'pull_request' }}
+            type=ref,event=pr
+          labels: |
+            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
+            org.opencontainers.image.created=${{ steps.date.outputs.date }}
+            org.opencontainers.image.description=${{ env.IMAGE_DESC }}
+            org.opencontainers.image.documentation=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
+            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/${{ github.sha }}/Containerfile
+            org.opencontainers.image.title=${{ env.IMAGE_NAME }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/tree/${{ github.sha }}
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+            org.opencontainers.image.version=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
+            io.artifacthub.package.deprecated=false
+            io.artifacthub.package.keywords=${{ env.IMAGE_KEYWORDS }}
+            io.artifacthub.package.license=Apache-2.0
+            io.artifacthub.package.logo-url=${{ env.IMAGE_LOGO_URL }}
+            io.artifacthub.package.prerelease=false
+            containers.bootc=1
+          sep-tags: " "
+          sep-annotations: " "
 
-      - name: Push arch image
-        if: github.event_name != 'pull_request'
+      - name: Build Image
+        id: build_image
+        uses: redhat-actions/buildah-build@7a95fa7ee0f02d552a32753e7414641a04307056 # v2
+        with:
+          containerfiles: |
+            ./Containerfile
+          build-args: |
+            DESKTOP=${{ inputs.desktop }}
+          image: ${{ env.IMAGE_NAME }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          oci: false
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push To GHCR
+        uses: redhat-actions/push-to-registry@5ed88d269cf581ea9ef6dd6806d01562096bee9c # v2
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: push
-        run: |
-          DEST="${{ env.IMAGE_REGISTRY }}/${{ inputs.image_name }}:${{ env.DEFAULT_TAG }}"
-          podman push --digestfile=/tmp/digestfile "localhost/${{ inputs.image_name }}:${{ env.DEFAULT_TAG }}" "${DEST}-amd64"
-          echo "digest=$(< /tmp/digestfile)" >> "$GITHUB_OUTPUT"
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ github.token }}
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          image: ${{ env.IMAGE_NAME }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ env.REGISTRY_PASSWORD }}
 
       - name: Install Cosign
-        if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@v3.5.0
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        with:
+          cosign-release: 'v2.6.3'
 
-      - name: Sign and Manifest
-        if: github.event_name != 'pull_request'
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+      - name: Sign container image
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: |
-          DIGEST="${{ steps.push.outputs.digest }}"
-          REGISTRY_IMAGE="${{ env.IMAGE_REGISTRY }}/${{ inputs.image_name }}"
-          
-          # Sign arch-specific image
-          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${REGISTRY_IMAGE}@${DIGEST}"
-          
-          # Create and push manifest
-          TARGET="${REGISTRY_IMAGE}:${{ env.DEFAULT_TAG }}"
-          podman manifest create "${TARGET}"
-          podman manifest add "${TARGET}" "${REGISTRY_IMAGE}@${DIGEST}" --arch amd64
-          
-          # Standard Bootc Metadata
-          podman manifest annotate --index --annotation "containers.bootc=1" "${TARGET}"
-          podman manifest annotate --index --annotation "org.opencontainers.image.title=${{ inputs.image_name }}" "${TARGET}"
-          podman manifest annotate --index --annotation "org.opencontainers.image.description=${{ inputs.image_desc }}" "${TARGET}"
-          
-          # Push multi-arch manifest
-          podman manifest push "${TARGET}" "${TARGET}"
-          
-          # Sign the manifest
-          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${TARGET}"
+          IMAGE_FULL="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
+          for tag in ${{ steps.metadata.outputs.tags }}; do
+            cosign sign -y --key env://COSIGN_PRIVATE_KEY $IMAGE_FULL:$tag
+          done
+        env:
+          TAGS: ${{ steps.push.outputs.digest }}
+          COSIGN_EXPERIMENTAL: false
+          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
