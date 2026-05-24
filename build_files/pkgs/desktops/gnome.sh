@@ -2,7 +2,7 @@
 
 set -ouex pipefail
 
-apt install -y  ubuntu-desktop-minimal python3-nautilus
+apt install -y ubuntu-desktop-minimal python3-nautilus
 
 apt install -y network-manager-openconnect-gnome \
     network-manager-openvpn-gnome \

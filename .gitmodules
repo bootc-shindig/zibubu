@@ -1,0 +1,6 @@
+[submodule "build_files/friends/zirconium"]
+	path = build_files/friends/zirconium
+	url = https://github.com/zirconium-dev/zirconium
+[submodule "build_files/friends/zircassets"]
+	path = build_files/friends/zircassets
+	url = https://github.com/zirconium-dev/assets

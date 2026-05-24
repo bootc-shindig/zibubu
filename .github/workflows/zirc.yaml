@@ -1,4 +1,4 @@
-name: Build GNOME Remix
+name: Build Zirconium Remix
 on:
   pull_request:
     branches: [main]
@@ -18,8 +18,8 @@ jobs:
   build:
     uses: ./.github/workflows/reusable-build.yaml
     with:
-      desktop: gnome
-      image_name: ubuntu-bootc-remix
-      image_desc: "Unofficial Atomic Ubuntu (GNOME)"
+      desktop: zirc
+      image_name: zibubu
+      image_desc: "Unofficial Atomic Ubuntu (Zirconium)"
     secrets:
       SIGNING_SECRET: ${{ secrets.SIGNING_SECRET }}

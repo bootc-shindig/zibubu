@@ -1,0 +1,2 @@
+deb [arch=amd64] https://ppa.launchpadcontent.net/avengemedia/danklinux/ubuntu resolute main
+deb [arch=amd64] https://ppa.launchpadcontent.net/avengemedia/dms-git/ubuntu resolute main

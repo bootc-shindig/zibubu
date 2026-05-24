@@ -9,6 +9,9 @@ case "${DESKTOP}" in
   gnome)
     /ctx/pkgs/desktops/gnome.sh
     ;;
+  zirc)
+    /ctx/pkgs/desktops/zirc.sh
+    ;;
   *)
     echo "Installing server as fallback..." >&2
     ;;

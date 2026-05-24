@@ -48,12 +48,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Setup a temporary root passwd (changeme) for dev purposes
-RUN apt-get update -y && apt-get install -y whois
-RUN usermod -p "$(echo "changeme" | mkpasswd -s)" root
-
-RUN echo ${DESKTOP}
-RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
-    DESKTOP=${DESKTOP} /ctx/config.sh
+# RUN apt-get update -y && apt-get install -y whois
+# RUN usermod -p "$(echo "changeme" | mkpasswd -s)" root
 
 
 RUN apt-get update && apt-get install -y curl && \
@@ -72,6 +68,10 @@ RUN --mount=type=tmpfs,dst=/tmp --mount=type=tmpfs,dst=/root --mount=type=tmpfs,
     dracut --force "$(find /usr/lib/modules -maxdepth 1 -type d | tail -n 1)/initramfs.img" && \
     apt-get autoremove -y && \
     apt-get clean -y
+
+RUN echo ${DESKTOP}
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    DESKTOP=${DESKTOP} /ctx/config.sh
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     /ctx/mount-system.sh
