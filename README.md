@@ -1,6 +1,6 @@
 # ~~Ubuntu Bootc Remix~~ Zibubu
 
-Legally Ubuntu based Zirconium image
+Legally distinc Ubuntu based Zirconium image
 
 
 WIP or something, it still pulls gnome/gdm
